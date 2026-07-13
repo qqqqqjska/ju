@@ -4378,57 +4378,76 @@ function handleChatCamera() {
 }
 
 function handleChatPhotoUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+    const input = e.target;
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
 
-    const fallbackToInlinePayload = async () => {
-        let payload = '';
-        if (typeof window.buildInlineChatImagePayload === 'function') {
-            payload = await window.buildInlineChatImagePayload(file, 1280, 0.72);
-        } else {
-            payload = await compressImage(file, 1280, 0.72);
-        }
+    // 把单个文件按现有策略存储，返回可用的媒体引用/内联负载
+    const processOne = async (file) => {
+        const inlinePayload = async () => {
+            let payload = '';
+            if (typeof window.buildInlineChatImagePayload === 'function') {
+                payload = await window.buildInlineChatImagePayload(file, 1280, 0.72);
+            } else {
+                payload = await compressImage(file, 1280, 0.72);
+            }
+            if (payload && typeof window.persistInlineChatImagePayload === 'function') {
+                payload = await window.persistInlineChatImagePayload(payload, {
+                    type: file.type || 'image/jpeg',
+                    name: file.name || ''
+                });
+            }
+            return payload;
+        };
 
-        if (payload && typeof window.persistInlineChatImagePayload === 'function') {
-            payload = await window.persistInlineChatImagePayload(payload, {
-                type: file.type || 'image/jpeg',
-                name: file.name || ''
-            });
-        }
-
-        sendMessage(payload, true, 'image', null, null, {
-            fileName: file.name || ''
-        });
-    };
-
-    Promise.resolve()
-        .then(async () => {
+        try {
             if (typeof window.shouldPreferInlineChatImageStorage === 'function' && window.shouldPreferInlineChatImageStorage(file)) {
-                return fallbackToInlinePayload();
+                return await inlinePayload();
             }
-
             if (typeof window.compressImageToBlob !== 'function' || typeof window.saveChatMediaBlob !== 'function') {
-                return fallbackToInlinePayload();
+                return await inlinePayload();
             }
-
             const blob = await window.compressImageToBlob(file, 1280, 0.72);
             const mediaRef = await window.saveChatMediaBlob(blob, {
                 type: blob.type || file.type || 'image/jpeg',
                 name: file.name || ''
             });
-            sendMessage(mediaRef, true, 'image', null, null, {
-                fileName: file.name || ''
-            });
-            return null;
-        })
-        .catch(() => fallbackToInlinePayload())
-        .then(() => {
-            document.getElementById('chat-more-panel').classList.add('hidden');
-        })
-        .catch(err => {
-            console.error('图片压缩失败', err);
-        });
-    e.target.value = '';
+            return mediaRef;
+        } catch (err) {
+            return await inlinePayload();
+        }
+    };
+
+    (async () => {
+        try {
+            if (files.length === 1) {
+                // 单张：保持原有 image 行为
+                const ref = await processOne(files[0]);
+                if (ref) sendMessage(ref, true, 'image', null, null, { fileName: files[0].name || '' });
+                return;
+            }
+            // 多张：逐个存储后合并为“合并照片”消息
+            const refs = [];
+            for (const f of files) {
+                const r = await processOne(f);
+                if (r) refs.push(r);
+            }
+            if (refs.length === 1) {
+                sendMessage(refs[0], true, 'image', null, null, {});
+            } else if (refs.length > 1) {
+                const content = (typeof window.buildMergedPhotosContent === 'function')
+                    ? window.buildMergedPhotosContent(refs)
+                    : JSON.stringify(refs);
+                sendMessage(content, true, 'merged_photos', null, null, { count: refs.length });
+            }
+        } catch (err) {
+            console.error('图片处理失败', err);
+        } finally {
+            const morePanel = document.getElementById('chat-more-panel');
+            if (morePanel) morePanel.classList.add('hidden');
+            input.value = '';
+        }
+    })();
 }
 
 // --- AI 设置相关 ---
@@ -6042,7 +6061,7 @@ async function makeAiCallDecision(contact) {
             const history = window.iphoneSimState.chatHistory[contact.id] || [];
             const recentHistory = history.slice(-10).map(m => {
                 let content = m.content;
-                if (m.type === 'image') content = '[图片]';
+                if (m.type === 'image' || m.type === 'merged_photos') content = '[图片]';
                 else if (m.type === 'sticker') content = '[表情包]';
                 return `${m.role === 'user' ? '用户' : '你'}: ${content}`;
             }).join('\n');
@@ -7135,7 +7154,7 @@ async function makeAiVideoCallDecision(contact) {
             const history = window.iphoneSimState.chatHistory[contact.id] || [];
             const recentHistory = history.slice(-10).map(m => {
                 let content = m.content;
-                if (m.type === 'image') content = '[图片]';
+                if (m.type === 'image' || m.type === 'merged_photos') content = '[图片]';
                 else if (m.type === 'sticker') content = '[表情包]';
                 return `${m.role === 'user' ? '用户' : '你'}: ${content}`;
             }).join('\n');
@@ -7868,7 +7887,7 @@ ${worldbookContext}
                 if (data.text) content = data.text;
             } catch(e) {}
 
-            if (h.type === 'image') content = '[图片]';
+            if (h.type === 'image' || h.type === 'merged_photos') content = '[图片]';
             else if (h.type === 'sticker') content = '[表情包]';
             else if (h.type === 'voice') content = '[语音]';
             

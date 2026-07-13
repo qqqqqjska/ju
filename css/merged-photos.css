@@ -1,0 +1,148 @@
+/*!
+ * merged-photos.css — 微信"合并照片"消息样式
+ * 折叠堆叠卡 / "展开·收起"药丸 / 展开照片流 / 飞行替身 / 大图查看器
+ */
+
+.mp-root {
+    display: inline-block;
+    position: relative;
+}
+
+.mp-skeleton {
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.06);
+    animation: mp-skeleton-pulse 1.2s ease-in-out infinite;
+}
+@keyframes mp-skeleton-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.85; }
+}
+
+/* —— 折叠态：堆叠卡 + 展开药丸 —— */
+.mp-collapsed {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+.mp-stage-host {
+    position: relative;
+}
+.mp-pill {
+    border: 0;
+    outline: 0;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    color: #576b95;                 /* 微信链接蓝 */
+    background: rgba(0, 0, 0, 0.04);
+    padding: 5px 10px;
+    border-radius: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s;
+}
+.mp-pill:active { background: rgba(0, 0, 0, 0.09); }
+
+/* —— 展开态：竖直照片流 —— */
+.mp-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    opacity: 0;
+}
+/* 测量阶段：参与布局但不可见 */
+.mp-flow.mp-measuring {
+    opacity: 0 !important;
+}
+
+.mp-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+/* 他人：头像在左；自己：照片在右、头像在右 */
+.chat-message.user .mp-flow .mp-row { justify-content: flex-end; }
+.chat-message.other .mp-flow .mp-row { justify-content: flex-start; }
+
+.mp-row-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 5px;
+    object-fit: cover;
+    flex: 0 0 auto;
+    opacity: 0;                     /* 由 JS 编排淡入 */
+    background: #eee;
+}
+/* 展开时隐藏消息本体那个头像，避免与逐行头像重复 */
+.chat-message.mp-expanded > .chat-avatar {
+    visibility: hidden;
+}
+
+.mp-photo {
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.10);
+    background: #f2f2f2;
+    line-height: 0;
+}
+.mp-photo-img {
+    display: block;
+    max-width: 150px;
+    max-height: 220px;
+    width: auto;
+    height: auto;
+    cursor: pointer;
+}
+
+.mp-collapse-pill {
+    align-self: flex-start;
+    margin-top: 2px;
+}
+.chat-message.user .mp-flow .mp-collapse-pill { align-self: flex-end; }
+
+/* —— 飞行替身（展开/收起过程中的临时元素）—— */
+.mp-flyer {
+    position: fixed;
+    left: 0;
+    top: 0;
+    border-radius: 8px;
+    object-fit: cover;
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.16);
+    pointer-events: none;
+    z-index: 9998;
+    will-change: transform, width, height;
+    transform: translateZ(0);
+}
+
+/* —— 全屏大图查看器 —— */
+.mp-viewer {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: rgba(0, 0, 0, 0.9);
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-out;
+    touch-action: pan-x;
+}
+.mp-viewer.show { display: flex; }
+.mp-viewer-img {
+    max-width: 92vw;
+    max-height: 84vh;
+    border-radius: 10px;
+    transition: transform 0.18s;
+}
+.mp-viewer-num {
+    position: absolute;
+    top: max(16px, env(safe-area-inset-top, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-size: 13px;
+    background: rgba(255, 255, 255, 0.14);
+    padding: 3px 12px;
+    border-radius: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}

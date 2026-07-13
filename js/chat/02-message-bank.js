@@ -332,6 +332,7 @@ function getScreenShareChatMessageText(msg) {
             if (durationText) return `[语音 ${durationText}]`;
             return '[语音]';
         }
+        case 'merged_photos':
         case 'image': {
             const desc = truncateScreenShareChatText(String(msg && msg.description || '').trim(), 90);
             return desc ? `[图片] ${desc}` : '[图片]';

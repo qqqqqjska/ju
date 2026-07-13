@@ -1672,7 +1672,7 @@ function buildRecalledMessageSnapshot(message) {
 function getRecalledMessageTypeLabel(type) {
     const normalizedType = String(type || 'text').trim().toLowerCase();
     if (normalizedType === 'text') return '文本消息';
-    if (normalizedType === 'image' || normalizedType === 'virtual_image') return '图片';
+    if (normalizedType === 'image' || normalizedType === 'virtual_image' || normalizedType === 'merged_photos') return '图片';
     if (normalizedType === 'sticker') return '表情包';
     if (normalizedType === 'voice') return '语音';
     if (normalizedType === 'quote_reply') return '引用回复';
@@ -1692,7 +1692,7 @@ function getRecalledMessageContentPreview(snapshot) {
         return text || '[空文本]';
     }
 
-    if (normalizedType === 'image' || normalizedType === 'virtual_image') {
+    if (normalizedType === 'image' || normalizedType === 'virtual_image' || normalizedType === 'merged_photos') {
         const desc = String(snapshot.description || '').trim();
         return desc ? `[图片] ${desc}` : '[图片]';
     }
@@ -1933,7 +1933,7 @@ function appendMessageToUI(text, isUser, type = 'text', description = null, repl
         }
     }
 
-    const noBubbleTypes = new Set(['image', 'sticker', 'virtual_image', 'description', 'transfer', 'red_packet', 'group_poll', 'group_relay', 'family_card', 'food_invite', 'route_invite', 'gift_card', 'shopping_gift', 'delivery_share', 'order_progress', 'order_share', 'pay_request', 'product_share', 'icity_card', 'minesweeper_invite', 'pdd_cash_share', 'pdd_bargain_share', 'savings_invite', 'savings_withdraw_request', 'savings_withdraw_result', 'savings_progress', 'music_listen_invite', 'music_song_share', 'forum_post_share']);
+    const noBubbleTypes = new Set(['image', 'merged_photos', 'sticker', 'virtual_image', 'description', 'transfer', 'red_packet', 'group_poll', 'group_relay', 'family_card', 'food_invite', 'route_invite', 'gift_card', 'shopping_gift', 'delivery_share', 'order_progress', 'order_share', 'pay_request', 'product_share', 'icity_card', 'minesweeper_invite', 'pdd_cash_share', 'pdd_bargain_share', 'savings_invite', 'savings_withdraw_request', 'savings_withdraw_result', 'savings_progress', 'music_listen_invite', 'music_song_share', 'forum_post_share']);
     const currentMessageUsesBubbleTail = !noBubbleTypes.has(type);
 
     if (!shouldShowTimeDivider && currentMessageUsesBubbleTail && lastMsg && lastMsg.classList.contains('chat-message')) {
@@ -2040,6 +2040,8 @@ function appendMessageToUI(text, isUser, type = 'text', description = null, repl
             ? ` data-chat-media-ref="${encodeURIComponent(text)}"`
             : '';
         contentHtml = `<img src="${initialImageSrc}"${deferredAttr} onclick="showImagePreview(this)" loading="lazy" decoding="async" style="max-width: 200px; border-radius: 4px;">`;
+    } else if (type === 'merged_photos') {
+        contentHtml = (typeof window.buildMergedPhotosMarkup === 'function') ? window.buildMergedPhotosMarkup(text) : '';
     } else if (type === 'voice') {
         let duration = '0:01';
         let transText = '[语音]';
@@ -2424,6 +2426,8 @@ function appendMessageToUI(text, isUser, type = 'text', description = null, repl
         extraClass = 'virtual-image-msg no-bubble';
     } else if (type === 'image') {
         extraClass = 'image-msg no-bubble';
+    } else if (type === 'merged_photos') {
+        extraClass = 'merged-photos-msg no-bubble';
     } else if (type === 'gift_card') {
         extraClass += ' gift-card-msg';
         let giftData = typeof text === 'string' ? JSON.parse(text) : text;
@@ -3569,6 +3573,7 @@ function appendMessageToUI(text, isUser, type = 'text', description = null, repl
 
     container.appendChild(msgDiv);
     hydrateDeferredChatMedia(msgDiv);
+    if (typeof window.initMergedPhotosMessage === 'function') window.initMergedPhotosMessage(msgDiv);
 }
 
 function hydrateDeferredChatMedia(messageNode) {
@@ -4171,7 +4176,7 @@ function handleQuote(msgData) {
     document.getElementById('reply-name').textContent = msgData.name;
     
     let previewText = msgData.content;
-    if (msgData.type === 'image') previewText = '[图片]';
+    if (msgData.type === 'image' || msgData.type === 'merged_photos') previewText = '[图片]';
     else if (msgData.type === 'sticker') previewText = '[表情包]';
     else if (msgData.type === 'transfer') previewText = '[转账]';
     else if (msgData.type === 'red_packet') previewText = '[红包]';
@@ -10884,6 +10889,20 @@ window.buildAiPromptMessages = async function(contactId, instruction = null, opt
                     role: h.role,
                     content: imageContentArray
                 };
+            } else if (h.type === 'merged_photos') {
+                let mpRefs = [];
+                try { mpRefs = JSON.parse(h.content); } catch (e) { mpRefs = []; }
+                if (!Array.isArray(mpRefs) || mpRefs.length === 0) {
+                    return { role: h.role, content: joinContextTextParts(structuredPrefix, '[图片]') };
+                }
+                const mpArray = [];
+                const mpIntro = joinContextTextParts(structuredPrefix, `[合并照片 共${mpRefs.length}张]`);
+                if (mpIntro) mpArray.push({ type: "text", text: mpIntro });
+                // 控制附图数量，避免上下文过大；多余的会由下游解析失败时自动降级为文本
+                mpRefs.slice(0, 6).forEach(url => {
+                    mpArray.push({ type: "image_url", image_url: { url: url } });
+                });
+                return { role: h.role, content: mpArray };
             } else if (h.type === 'virtual_image') {
                 const desc = h.description ? `: ${h.description}` : '';
                 return {

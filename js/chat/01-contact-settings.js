@@ -2457,7 +2457,7 @@ function formatLastMsgPreview(lastMsg, contact = null) {
 
     let preview = '[消息]';
 
-    if (lastMsg.type === 'image') preview = '[图片]';
+    if (lastMsg.type === 'image' || lastMsg.type === 'merged_photos') preview = '[图片]';
     else if (lastMsg.type === 'sticker') preview = '[表情包]';
     else if (lastMsg.type === 'transfer') preview = '[转账]';
     else if (lastMsg.type === 'red_packet') preview = '[红包]';
