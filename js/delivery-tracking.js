@@ -89,40 +89,73 @@
         return `${mins} 分钟`;
     }
 
-    // 生成骑手位置卡片的 HTML（含 SVG 路线与标记占位）
+    // 稳定的每单随机（种子来自订单 id）—— 让每单地图/路线各不相同
+    function hashStr(s) {
+        let h = 2166136261 >>> 0;
+        s = String(s || '');
+        for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+        return h >>> 0;
+    }
+    function mulberry32(a) {
+        return function () {
+            a |= 0; a = (a + 0x6D2B79F5) | 0;
+            let t = Math.imul(a ^ (a >>> 15), 1 | a);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    // 按订单生成一张"地图"的几何（起终点、路线曲线、路网），同一单稳定
+    function orderMapGeometry(order) {
+        const seed = hashStr(order && (order.id || order.time || Math.random()));
+        const rnd = mulberry32(seed || 1);
+        const rr = (min, max) => min + rnd() * (max - min);
+        const sx = rr(16, 52), sy = rr(22, 62);          // 商家（左上区域）
+        const hx = rr(188, 226), hy = rr(96, 142);        // 我的位置（右下区域）
+        const c1x = rr(55, 130), c1y = rr(8, 78);         // 路线控制点（决定弯法）
+        const c2x = rr(120, 195), c2y = rr(84, 152);
+        const f = (n) => n.toFixed(1);
+        const pathD = `M ${f(sx)} ${f(sy)} C ${f(c1x)} ${f(c1y)}, ${f(c2x)} ${f(c2y)}, ${f(hx)} ${f(hy)}`;
+        let roads = '';
+        const n = 3 + Math.floor(rnd() * 3);
+        for (let i = 0; i < n; i++) {
+            if (rnd() < 0.5) {
+                const y = rr(12, 148);
+                roads += `<line x1="-10" y1="${f(y)}" x2="250" y2="${f(y + rr(-16, 16))}"/>`;
+            } else {
+                const x = rr(24, 216);
+                roads += `<line x1="${f(x)}" y1="-10" x2="${f(x + rr(-16, 16))}" y2="170"/>`;
+            }
+        }
+        return { sx, sy, hx, hy, pathD, roads, f };
+    }
+
+    // 生成骑手位置卡片的 HTML（地图/路线按订单随机）
     function riderCardMarkup(order) {
         const isDelivery = window.isDeliveryShoppingOrder(order);
         const shopName = (order.items && order.items[0] && order.items[0].shop_name) || (isDelivery ? '外卖商家' : '商家');
+        const shopLabel = shopName.length > 8 ? shopName.slice(0, 8) + '…' : shopName;
         const rider = ensureRiderInfo(order);
         const moverIcon = isDelivery ? (rider.vehicle === '摩托车' ? '🏍️' : '🛵') : '🚚';
-        // 一条从商家(左上)到你(右下)的曲线路径
-        const pathD = 'M 26 34 C 90 20, 150 120, 214 128';
+        const g = orderMapGeometry(order);
+        const f = g.f;
         return `
         <div class="rider-track-card" style="background:#fff;border-radius:12px;padding:16px;margin-bottom:15px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
                 <div style="font-weight:bold;font-size:15px;">📍 ${isDelivery ? '骑手' : '快递员'}实时位置</div>
                 <div class="rider-track-status" style="font-size:12px;color:#07c160;font-weight:600;"></div>
             </div>
-            <div class="rider-track-map" style="position:relative;height:160px;border-radius:10px;overflow:hidden;background:linear-gradient(135deg,#eef3f7,#e3ebf2);">
-                <svg viewBox="0 0 240 160" width="100%" height="100%" style="position:absolute;inset:0;">
-                    <g stroke="#d7dee6" stroke-width="6" fill="none" stroke-linecap="round">
-                        <line x1="-10" y1="52" x2="250" y2="40"/>
-                        <line x1="40" y1="-10" x2="70" y2="170"/>
-                        <line x1="150" y1="-10" x2="185" y2="170"/>
-                        <line x1="-10" y1="110" x2="250" y2="122"/>
-                    </g>
-                    <path d="${pathD}" fill="none" stroke="#07c160" stroke-width="3" stroke-dasharray="5 5" opacity="0.85"/>
-                    <path class="rider-track-path" d="${pathD}" fill="none" stroke="none"/>
-                    <g class="rider-track-shop">
-                        <circle cx="26" cy="34" r="7" fill="#ff9f0a" stroke="#fff" stroke-width="2"/>
-                    </g>
-                    <g class="rider-track-home">
-                        <circle cx="214" cy="128" r="7" fill="#0a84ff" stroke="#fff" stroke-width="2"/>
-                    </g>
+            <div class="rider-track-map" style="position:relative;width:100%;aspect-ratio:3/2;max-height:200px;border-radius:10px;overflow:hidden;background:linear-gradient(135deg,#eef3f7,#e3ebf2);">
+                <svg viewBox="0 0 240 160" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="position:absolute;inset:0;display:block;">
+                    <g stroke="#d7dee6" stroke-width="6" fill="none" stroke-linecap="round">${g.roads}</g>
+                    <path d="${g.pathD}" fill="none" stroke="#07c160" stroke-width="3" stroke-dasharray="5 5" opacity="0.85"/>
+                    <path class="rider-track-path" d="${g.pathD}" fill="none" stroke="none"/>
+                    <circle cx="${f(g.sx)}" cy="${f(g.sy)}" r="6.5" fill="#ff9f0a" stroke="#fff" stroke-width="2"/>
+                    <circle cx="${f(g.hx)}" cy="${f(g.hy)}" r="6.5" fill="#0a84ff" stroke="#fff" stroke-width="2"/>
+                    <text x="${f(g.sx)}" y="${f(g.sy - 10)}" text-anchor="middle" font-size="8" fill="#8a5a00" style="paint-order:stroke;stroke:#fff;stroke-width:2.4px;">${shopLabel}</text>
+                    <text x="${f(g.hx)}" y="${f(g.hy + 16)}" text-anchor="middle" font-size="8" fill="#0a4a8a" style="paint-order:stroke;stroke:#fff;stroke-width:2.4px;">我的位置</text>
+                    <text class="rider-track-mover" text-anchor="middle" dominant-baseline="central" font-size="15" transform="translate(${f(g.sx)},${f(g.sy)})" style="transform:translate(${f(g.sx)}px,${f(g.sy)}px);transition:none;">${moverIcon}</text>
                 </svg>
-                <div class="rider-track-shop-label" style="position:absolute;left:6px;top:44px;font-size:10px;color:#8a5a00;background:rgba(255,255,255,.8);padding:1px 5px;border-radius:6px;">${shopName}</div>
-                <div class="rider-track-home-label" style="position:absolute;right:6px;bottom:8px;font-size:10px;color:#0a4a8a;background:rgba(255,255,255,.8);padding:1px 5px;border-radius:6px;">我的位置</div>
-                <div class="rider-track-mover" style="position:absolute;left:0;top:0;font-size:22px;transform:translate(-50%,-60%);transition:transform .8s linear;will-change:transform;">${moverIcon}</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
                 <div style="width:36px;height:36px;border-radius:50%;background:#07c160;color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 auto;">${isDelivery ? '🛵' : '📦'}</div>
@@ -152,13 +185,17 @@
         const statusEl = cardEl.querySelector('.rider-track-status');
         const barEl = cardEl.querySelector('.rider-track-bar');
 
-        // 沿路径定位骑手
-        let pt = { x: 26, y: 34 };
-        if (path && typeof path.getTotalLength === 'function') {
+        // 沿路径定位骑手（骑手是 SVG 内元素，与路线/定位点同坐标系，精确对齐）
+        if (mover && path && typeof path.getTotalLength === 'function') {
             const len = path.getTotalLength();
-            pt = path.getPointAtLength(len * Math.max(0, p));
+            const pt = path.getPointAtLength(len * Math.max(0, Math.min(1, p < 0 ? 0 : p)));
+            mover.setAttribute('transform', `translate(${pt.x},${pt.y})`);
+            mover.style.transform = `translate(${pt.x}px, ${pt.y}px)`;
+            if (!mover.dataset.ready) {
+                mover.dataset.ready = '1';
+                requestAnimationFrame(() => { mover.style.transition = 'transform .9s linear'; });
+            }
         }
-        if (mover) mover.style.transform = `translate(${pt.x}px, ${pt.y}px) translate(-50%,-60%)`;
 
         let barPct = Math.max(0, Math.min(1, p)) * 100;
 
@@ -169,7 +206,6 @@
                 ? `预计 ${window.formatShoppingHm ? window.formatShoppingHm(m.deliverTs) : ''} 送达`
                 : '商家正在打包';
             barPct = 4;
-            if (mover) mover.style.transform = `translate(26px, 34px) translate(-50%,-60%)`;
         } else if (p >= 1) {
             if (statusEl) statusEl.textContent = '已送达';
             if (etaEl) etaEl.textContent = '订单已送达，请查收';
