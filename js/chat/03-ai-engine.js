@@ -3478,8 +3478,10 @@ function appendMessageToUI(text, isUser, type = 'text', description = null, repl
             return;
         }
 
-        // 折叠堆叠卡：横滑用于 PhotoStack 翻页，禁用消息滑动引用/编辑（展开后的照片在 .mp-flow 内不受影响）
+        // 折叠堆叠卡：整块交给 PhotoStack（横滑翻页），完全不启用消息手势——
+        // 否则长按计时器/滑动跟踪会与翻页竞争（表现为"有时滑不动"）
         swipeOnCollapsedStack = !!(e.target && e.target.closest && e.target.closest('.mp-collapsed'));
+        if (swipeOnCollapsedStack) return;
 
         const touch = e.touches && e.touches[0];
         if (touch) {
