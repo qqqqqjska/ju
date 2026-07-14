@@ -97,6 +97,22 @@
     background: #eee;
 }
 
+/* 跟随聊天设置里的"隐藏头像"：展开后的逐行头像也一并隐藏 */
+#chat-screen.hide-chat-avatar .mp-row-avatar,
+#chat-screen.hide-chat-avatar-other .chat-message.other .mp-row-avatar,
+#chat-screen.hide-chat-avatar-self .chat-message.user .mp-row-avatar {
+    display: none;
+}
+/* 头像隐藏后，"收起"按钮取消让位缩进 */
+#chat-screen.hide-chat-avatar .chat-message.other .mp-flow .mp-collapse-pill,
+#chat-screen.hide-chat-avatar-other .chat-message.other .mp-flow .mp-collapse-pill {
+    margin-left: 0;
+}
+#chat-screen.hide-chat-avatar .chat-message.user .mp-flow .mp-collapse-pill,
+#chat-screen.hide-chat-avatar-self .chat-message.user .mp-flow .mp-collapse-pill {
+    margin-right: 0;
+}
+
 .mp-photo {
     border-radius: 6px;
     overflow: hidden;
