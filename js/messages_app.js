@@ -219,8 +219,37 @@
         };
     }
 
+    function getSystemThreads() {
+        const store = (window.iphoneSimState && window.iphoneSimState.systemMessageThreads) || {};
+        return Object.keys(store).map(function (id) {
+            const t = store[id] || {};
+            const messages = Array.isArray(t.messages) ? t.messages : [];
+            if (!messages.length) return null;
+            const lastMessage = messages[messages.length - 1];
+            const unreadCount = messages.filter(function (m) { return m && m.readInMessagesApp !== true; }).length;
+            return {
+                id: 'sys:' + id,
+                systemId: id,
+                isSystem: true,
+                contactId: null,
+                name: t.name || '服务通知',
+                avatar: String(t.avatar || '').trim(),
+                messages: messages,
+                lastMessage: lastMessage,
+                preview: formatMessagePreview(lastMessage),
+                time: formatThreadTime(lastMessage && lastMessage.time),
+                unreadCount: unreadCount,
+                unread: unreadCount > 0
+            };
+        }).filter(Boolean);
+    }
+
     function getThread(threadId) {
         if (threadId == null) return null;
+        const key = String(threadId);
+        if (key.indexOf('sys:') === 0) {
+            return getSystemThreads().find(function (t) { return t.id === key; }) || null;
+        }
         return buildThread(threadId);
     }
 
@@ -232,6 +261,7 @@
         return contacts
             .map(contact => buildThread(contact.id))
             .filter(thread => thread && thread.messages.length > 0)
+            .concat(getSystemThreads())
             .sort((threadA, threadB) => {
                 const timeA = Number(threadA.lastMessage && threadA.lastMessage.time) || 0;
                 const timeB = Number(threadB.lastMessage && threadB.lastMessage.time) || 0;
@@ -963,6 +993,36 @@
         });
     }
 
+    function renderSystemChat(thread) {
+        const avatarEl = document.getElementById('messages-chat-avatar');
+        const nameEl = document.getElementById('messages-chat-name');
+        const listEl = document.getElementById('messages-chat-scroll');
+        if (!avatarEl || !nameEl || !listEl) return;
+        nameEl.textContent = thread.name || '服务通知';
+        avatarEl.className = 'messages-chat-avatar';
+        applyAvatarFill(avatarEl, thread.avatar, (thread.name || '通').slice(0, 1));
+        let changed = false;
+        (thread.messages || []).forEach(function (m) {
+            if (m && m.readInMessagesApp !== true) { m.readInMessagesApp = true; changed = true; }
+        });
+        if (changed && typeof window.saveConfig === 'function') window.saveConfig();
+        listEl.innerHTML = '<div class="messages-timestamp">今天</div>' + buildBubbleMarkup(thread.messages || []);
+        hydrateDeferredMessagesMedia(listEl);
+        syncMultiSelectUI();
+        syncReplyBar();
+        listEl.scrollTop = listEl.scrollHeight;
+        const si = document.getElementById('messages-search-input');
+        renderThreadList(si ? si.value : '');
+    }
+
+    window.refreshMessagesAppView = function () {
+        const app = document.getElementById('messages-app');
+        if (!app || app.classList.contains('hidden')) return;
+        const si = document.getElementById('messages-search-input');
+        renderThreadList(si ? si.value : '');
+        if (state.activeThreadId != null) renderChat(state.activeThreadId);
+    };
+
     function renderChat(threadId) {
         const avatarEl = document.getElementById('messages-chat-avatar');
         const nameEl = document.getElementById('messages-chat-name');
@@ -971,6 +1031,7 @@
         if (!avatarEl || !nameEl || !listEl) return;
 
         const thread = threadId != null ? getThread(threadId) : null;
+        if (thread && thread.isSystem) { renderSystemChat(thread); return; }
         const contact = thread ? getContact(thread.contactId) : getContact(threadId);
 
         if (app && app.classList.contains('chat-open') && thread && typeof window.markMessagesAppThreadRead === 'function') {

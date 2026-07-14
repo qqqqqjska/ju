@@ -1521,30 +1521,35 @@ function isDeliveryShoppingOrder(order) {
 
 function computeShoppingOrderMilestones(orderTime, isDelivery) {
     const orderTs = Number(orderTime) || Date.now();
+    const MIN = 60 * 1000;
+    const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
 
     if (isDelivery) {
-        // Real-world-ish takeaway: picked up in ~15min, delivered in ~40min.
+        // 外卖：骑手 8~18 分钟取货，25~55 分钟送达（按真实时间随机，下单时定一次并持久化）
+        const shipMin = randInt(8, 18);
+        let deliverMin = randInt(25, 55);
+        if (deliverMin < shipMin + 10) deliverMin = shipMin + 10;
         return {
             orderTs,
-            shipTs: orderTs + 15 * 60 * 1000,
-            deliverTs: orderTs + 40 * 60 * 1000
+            shipTs: orderTs + shipMin * MIN,
+            deliverTs: orderTs + deliverMin * MIN
         };
     }
 
-    // Regular shopping: shipped the same day, delivered 2 days later.
+    // 普通购物：当天发货，1~3 天后随机送达
     const d = new Date(orderTs);
     const targetShipTs = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 18, 0, 0, 0).getTime();
     const endOfDayTs = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 0, 0).getTime();
-    const minShipTs = orderTs + 30 * 60 * 1000;
+    const minShipTs = orderTs + 30 * MIN;
     let shipTs = Math.max(targetShipTs, minShipTs);
     if (shipTs > endOfDayTs) {
-        shipTs = Math.max(orderTs + 5 * 60 * 1000, endOfDayTs);
+        shipTs = Math.max(orderTs + 5 * MIN, endOfDayTs);
     }
-
+    const deliverDays = randInt(1, 3);
     return {
         orderTs,
         shipTs,
-        deliverTs: shipTs + 2 * 24 * 60 * 60 * 1000
+        deliverTs: shipTs + deliverDays * 24 * 60 * MIN
     };
 }
 
@@ -2523,13 +2528,11 @@ function updateShoppingOrderStatuses() {
             order.status = nextStatus;
             hasChanges = true;
 
+            if (prevStatus && prevStatus !== '已发货' && prevStatus !== '已完成' && nextStatus === '已发货') {
+                if (typeof window.notifyOrderDispatched === 'function') window.notifyOrderDispatched(order);
+            }
             if (prevStatus !== '已完成' && nextStatus === '已完成') {
-                const isDelivery = isDeliveryShoppingOrder(order);
-                if (isDelivery) {
-                    showOrderNotification('外卖已送达', '您的外卖已准时送达，祝您用餐愉快');
-                } else {
-                    showOrderNotification('商品已送达', '您的快递已送达，请及时查收');
-                }
+                if (typeof window.notifyOrderDelivered === 'function') window.notifyOrderDelivered(order);
             }
         }
     });
@@ -2812,6 +2815,10 @@ window.openShoppingOrderProgress = function(orderId) {
             </div>
         </div>
     `;
+
+    if (typeof window.mountRiderTracking === 'function' && (isDelivery || currentStatus !== '待发货')) {
+        window.mountRiderTracking(contentEl, order);
+    }
 
     shareBtn.onclick = () => {
         modal.classList.add('hidden');
