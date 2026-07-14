@@ -28,9 +28,11 @@
 .mp-collapsed {
     display: inline-flex;
     flex-direction: row;          /* "展开N"在左、堆叠卡在右 */
-    align-items: flex-end;
+    align-items: center;          /* 按钮在 y 轴上居中于堆叠卡 */
     gap: 8px;
 }
+/* "展开"按钮单独再往左挪一点点 */
+.mp-collapsed .mp-pill { margin-right: 6px; }
 /* 展开后折叠态被隐藏时彻底不占位（否则顶部残留一段堆叠卡高度的空白）*/
 .mp-collapsed[hidden] { display: none !important; }
 /* 自己发的堆叠卡整体（连同"展开"按钮）往左挪一点，并给右侧探边留出空间 */
