@@ -21,9 +21,9 @@
 /* —— 折叠态：堆叠卡 + 展开药丸 —— */
 .mp-collapsed {
     display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
+    flex-direction: row;          /* "展开N"在左、堆叠卡在右 */
+    align-items: flex-end;
+    gap: 8px;
 }
 /* 展开后折叠态被隐藏时彻底不占位（否则顶部残留一段堆叠卡高度的空白）*/
 .mp-collapsed[hidden] { display: none !important; }
@@ -131,7 +131,7 @@
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.16);
     pointer-events: none;
     z-index: 9998;
-    will-change: transform, width, height;
+    will-change: transform, opacity;
     transform: translateZ(0);
 }
 

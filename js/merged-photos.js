@@ -95,17 +95,17 @@
             return a ? a.getAttribute('src') || '' : '';
         })();
 
-        // —— 折叠态：堆叠卡 + "展开 N" ——
+        // —— 折叠态："展开 N"（左） + 堆叠卡（右）——
         const collapsed = document.createElement('div');
         collapsed.className = 'mp-collapsed';
         const stageHost = document.createElement('div');
         stageHost.className = 'mp-stage-host';
-        collapsed.appendChild(stageHost);
         const pill = document.createElement('button');
         pill.type = 'button';
         pill.className = 'mp-pill';
         pill.textContent = '展开 ' + srcs.length;
-        collapsed.appendChild(pill);
+        collapsed.appendChild(pill);       // 按钮在图片左边
+        collapsed.appendChild(stageHost);
         root.appendChild(collapsed);
 
         // —— 展开态：竖直照片流（每行 头像+照片）——
@@ -156,18 +156,28 @@
         return document.getElementById('chat-messages');
     }
 
-    /* ── 飞行替身：从 stage 位置飞到目标照片位置（fixed 定位，视口坐标）── */
-    function makeFlyer(src, from) {
+    /* ── 飞行替身：定位在目标处，用 transform 映射回堆叠位再过渡（FLIP，走合成器，丝滑）── */
+    function makeFlyer(src, to) {
         const el = document.createElement('img');
         el.src = src;
         el.className = 'mp-flyer';
-        el.style.left = '0';
-        el.style.top = '0';
-        el.style.width = from.w + 'px';
-        el.style.height = from.h + 'px';
+        el.style.left = to.x + 'px';
+        el.style.top = to.y + 'px';
+        el.style.width = to.w + 'px';
+        el.style.height = to.h + 'px';
+        el.style.transformOrigin = '0 0';
         document.body.appendChild(el);
         return el;
     }
+
+    // 把 to 矩形映射到 from 矩形的 transform（transform-origin:0 0）
+    function mapTransform(from, to, rot) {
+        const sx = from.w / (to.w || 1);
+        const sy = from.h / (to.h || 1);
+        return `translate(${from.x - to.x}px, ${from.y - to.y}px) scale(${sx}, ${sy})` + (rot ? ` rotate(${rot}deg)` : '');
+    }
+
+    const FLIGHT_EASE = 'cubic-bezier(.22, .68, .34, 1)';
 
     function rectOf(el) {
         const r = el.getBoundingClientRect();
@@ -180,127 +190,101 @@
         return Math.max(-8, Math.min(8, (i - c) * 2.6));
     }
 
-    /* ── 展开 ── */
+    /* ── 展开（FLIP + CSS 过渡）── */
     function expand(ctx) {
         if (ctx.animating || ctx.expanded) return;
         ctx.animating = true;
         ctx.expanded = true;
 
+        const stageRect = rectOf(ctx.collapsed.querySelector('.mp-stage-host'));
         const cont = scrollContainer();
-        const stageRect = rectOf(ctx.ctxStage || ctx.collapsed.querySelector('.mp-stage-host'));
 
-        // 1) 先让展开流参与布局（图片可见但整行 opacity 0，用于测量落点），折叠态先留着占位
+        // 展开流参与布局，用于测量各行照片落点
         ctx.flow.hidden = false;
         ctx.flow.classList.add('mp-measuring');
         ctx.msgDiv.classList.add('mp-expanded');
 
-        // 记录滚动，保证不跳
-        const beforeScrollTop = cont ? cont.scrollTop : 0;
-
-        // 强制布局后测量每行照片落点
-        // 使用 rAF 保证 measuring 样式生效
         requestAnimationFrame(() => {
             const targets = ctx.rows.map(r => rectOf(r.shell));
 
-            // 2) 折叠堆叠卡淡出并移除占位（此刻起飞替身接管视觉）
-            ctx.collapsed.style.transition = 'opacity .16s';
+            ctx.collapsed.style.transition = 'opacity .2s ease';
             ctx.collapsed.style.opacity = '0';
-
-            // 隐藏真实照片与头像（飞行期间由替身表现）
-            ctx.rows.forEach(r => {
-                r.shell.style.visibility = 'hidden';
-                r.av.style.opacity = '0';
-            });
             ctx.flow.classList.remove('mp-measuring');
             ctx.flow.style.opacity = '1';
 
-            // 3) 为每张照片创建飞行替身：从 stage 起飞 → 落到目标行
-            let landed = 0;
             const n = ctx.srcs.length;
+            const DUR = 380, STAGGER = 42;
+            let done = 0;
+            const finishAll = () => { if (++done >= n) ctx.animating = false; };
+
             ctx.rows.forEach((r, i) => {
-                const from = {
-                    x: stageRect.x + (stageRect.w - Math.min(stageRect.w, targets[i].w)) / 2,
-                    y: stageRect.y,
-                    w: stageRect.w,
-                    h: stageRect.h,
-                    rot: fanAngle(i, n)
-                };
+                r.shell.style.visibility = 'hidden';   // 飞行期间由替身表现
+                r.av.style.opacity = '0';
                 const to = targets[i];
-                const flyer = makeFlyer(ctx.srcs[i], from);
-                flightAnimate(flyer, from, to, {
-                    hDur: H_DUR,
-                    vDur: H_DUR + V_STEP * i,
-                    reverse: false
-                }, () => {
+                const flyer = makeFlyer(ctx.srcs[i], to);
+                flyer.style.transform = mapTransform(stageRect, to, fanAngle(i, n));   // 起飞姿态＝堆叠位
+                flyer.getBoundingClientRect();                                          // 强制 reflow 锁定起点
+                const delay = i * STAGGER;
+                flyer.style.transition = `transform ${DUR}ms ${FLIGHT_EASE} ${delay}ms`;
+                flyer.style.transform = 'translate(0,0) scale(1,1) rotate(0deg)';       // 过渡到落位
+                let ended = false;
+                const finish = () => {
+                    if (ended) return; ended = true;
                     r.shell.style.visibility = '';
                     flyer.remove();
-                    landed++;
-                    if (landed >= n) finishExpand(ctx);
-                });
-                // 头像编排：以"最下方替身底边为扫描线"简化为按序号错落淡入
+                    finishAll();
+                };
+                flyer.addEventListener('transitionend', finish, { once: true });
+                setTimeout(finish, DUR + delay + 140);   // 兜底
                 fadeAvatar(r.av, i, false);
             });
 
-            // 4) 收起折叠态占位（高度已由 flow 接管）
-            setTimeout(() => { ctx.collapsed.hidden = true; }, 180);
-
-            // 5) 滚动编排：展开后若照片流超出下边缘，平滑跟随
-            keepVisibleAfterGrow(ctx, cont, beforeScrollTop);
+            setTimeout(() => { ctx.collapsed.hidden = true; }, 260);
+            keepVisibleAfterGrow(ctx, cont);
         });
     }
 
-    function finishExpand(ctx) {
-        ctx.animating = false;
-        ctx.rows.forEach(r => { r.shell.style.visibility = ''; });
-    }
-
-    /* ── 收起 ── */
+    /* ── 收起（FLIP 反向）── */
     function collapse(ctx) {
         if (ctx.animating || !ctx.expanded) return;
         ctx.animating = true;
         ctx.expanded = false;
 
-        const cont = scrollContainer();
-        // 收起会变矮：先在容器底部垫占位保住 scrollHeight，动画后再撤
-        const startFlowRect = rectOf(ctx.flow);
-
         // 折叠态先就位（透明），作为落点
         ctx.collapsed.hidden = false;
-        ctx.collapsed.style.opacity = '0';
         ctx.collapsed.style.transition = 'none';
+        ctx.collapsed.style.opacity = '0';
         const stageRect = rectOf(ctx.collapsed.querySelector('.mp-stage-host'));
 
         const n = ctx.srcs.length;
-        let landed = 0;
+        const DUR = 340, STAGGER = 38;
+        let done = 0;
+        const finishAll = () => { if (++done >= n) finishCollapse(ctx); };
 
-        // 头像同时渐隐
-        ctx.rows.forEach((r, i) => { fadeAvatar(r.av, i, true); });
+        ctx.rows.forEach((r, i) => fadeAvatar(r.av, i, true));
 
         ctx.rows.forEach((r, i) => {
-            const to = {
-                x: stageRect.x + (stageRect.w - Math.min(stageRect.w, rectOf(r.shell).w)) / 2,
-                y: stageRect.y,
-                w: stageRect.w,
-                h: stageRect.h,
-                rot: fanAngle(i, n)
-            };
             const from = rectOf(r.shell);
             r.shell.style.visibility = 'hidden';
             const flyer = makeFlyer(ctx.srcs[i], from);
-            flightAnimate(flyer, from, to, {
-                hDur: H_DUR,
-                vDur: H_DUR + V_STEP * (n - 1 - i),
-                reverse: true
-            }, () => {
+            flyer.style.transform = 'translate(0,0) scale(1,1) rotate(0deg)';
+            flyer.getBoundingClientRect();
+            const delay = (n - 1 - i) * STAGGER;
+            flyer.style.transition = `transform ${DUR}ms ${FLIGHT_EASE} ${delay}ms, opacity ${DUR}ms ease ${delay}ms`;
+            flyer.style.transform = mapTransform(stageRect, from, fanAngle(i, n));   // 收回堆叠位
+            flyer.style.opacity = '0';                                              // 落位后隐入折叠卡后方
+            let ended = false;
+            const finish = () => {
+                if (ended) return; ended = true;
                 flyer.remove();
-                landed++;
-                if (landed >= n) finishCollapse(ctx);
-            });
+                finishAll();
+            };
+            flyer.addEventListener('transitionend', finish, { once: true });
+            setTimeout(finish, DUR + delay + 140);
         });
 
-        // 折叠卡渐显
         requestAnimationFrame(() => {
-            ctx.collapsed.style.transition = 'opacity .22s ease';
+            ctx.collapsed.style.transition = 'opacity .24s ease';
             ctx.collapsed.style.opacity = '1';
         });
     }
@@ -320,34 +304,6 @@
             av.style.transition = `opacity ${AVATAR_FADE}ms ease`;
             av.style.opacity = out ? '0' : '1';
         }, delay);
-    }
-
-    /* ── 双时间轴飞行：横向(位移X/缩放/旋转)共用 hDur，纵向(位移Y)用 vDur ── */
-    function flightAnimate(el, from, to, opt, onDone) {
-        const t0 = performance.now();
-        const eH = opt.reverse ? easeInCubic : easeOutCubic;
-        const eV = opt.reverse ? easeInCubic : easeOutCubic;
-        const fromRot = from.rot || 0;
-        function frame(now) {
-            const dtH = Math.min(1, (now - t0) / opt.hDur);
-            const dtV = Math.min(1, (now - t0) / opt.vDur);
-            const h = eH(dtH);
-            const v = eV(dtV);
-            const x = from.x + (to.x - from.x) * h;
-            const y = from.y + (to.y - from.y) * v;
-            const w = from.w + (to.w - from.w) * h;
-            const ht = from.h + (to.h - from.h) * h;
-            const rot = fromRot * (1 - h);
-            el.style.width = w + 'px';
-            el.style.height = ht + 'px';
-            el.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
-            if (dtH < 1 || dtV < 1) {
-                requestAnimationFrame(frame);
-            } else {
-                onDone && onDone();
-            }
-        }
-        requestAnimationFrame(frame);
     }
 
     /* ── 滚动编排：展开变高后，若内容落到下边缘外，平滑跟随（rAF 补间）── */
