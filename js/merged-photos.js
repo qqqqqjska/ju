@@ -143,8 +143,16 @@
         // 堆叠卡实例
         const ps = new PhotoStack(stageHost, srcs, {
             width: STACK_W, height: STACK_H,
+            flingVel: 0.25,                       // 降低快甩阈值，轻甩即可翻页
             onTap: (i) => openViewer(srcs, i)
         });
+        // 在可滚动的聊天里让堆叠卡独占横向手势：否则浏览器可能把横滑判成纵向滚动并
+        // 发出 pointercancel，导致松手回弹翻不动（touch-action:none 交给组件全权处理）
+        const stageEl = stageHost.querySelector('.pstack-stage');
+        if (stageEl) stageEl.style.touchAction = 'none';
+        // 缩短翻页行程分母：原版按"起点到屏幕边"的距离，右侧气泡里过长，小卡片很难翻过阈值。
+        // 固定为 140px → 拖过约 70px（半程）即可翻页。
+        ps._progress = function (dx) { return Math.min(1, Math.abs(dx) / 140); };
 
         const ctx = { msgDiv, root, collapsed, flow, rows, srcs, ps, isUser, animating: false, expanded: false };
         pill.addEventListener('click', () => expand(ctx));
