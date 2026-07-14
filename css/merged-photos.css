@@ -1,7 +1,13 @@
 /*!
  * merged-photos.css — 微信"合并照片"消息样式
- * 折叠堆叠卡 / "展开·收起"药丸 / 展开照片流 / 飞行替身 / 大图查看器
+ * 折叠堆叠卡 / "展开·收起"药丸 / 展开照片流 / 大图查看器
  */
+
+/* 聊天消息列表禁止横向滚动：主规则只设了 overflow-y:auto，overflow-x 会被计算成 auto，
+   于是堆叠卡拖动/探边时伸出的卡片会撑出横向溢出、把整个列表拽得能左右滑。锁死横向。*/
+#chat-screen #chat-messages.chat-body {
+    overflow-x: hidden;
+}
 
 .mp-root {
     display: inline-block;
