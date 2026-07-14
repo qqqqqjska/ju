@@ -156,143 +156,140 @@
         return document.getElementById('chat-messages');
     }
 
-    /* ── 飞行替身：定位在目标处，用 transform 映射回堆叠位再过渡（FLIP，走合成器，丝滑）── */
-    function makeFlyer(src, to) {
-        const el = document.createElement('img');
-        el.src = src;
-        el.className = 'mp-flyer';
-        el.style.left = to.x + 'px';
-        el.style.top = to.y + 'px';
-        el.style.width = to.w + 'px';
-        el.style.height = to.h + 'px';
-        el.style.transformOrigin = '0 0';
-        document.body.appendChild(el);
-        return el;
-    }
-
-    // 把 to 矩形映射到 from 矩形的 transform（transform-origin:0 0）
-    function mapTransform(from, to, rot) {
-        const sx = from.w / (to.w || 1);
-        const sy = from.h / (to.h || 1);
-        return `translate(${from.x - to.x}px, ${from.y - to.y}px) scale(${sx}, ${sy})` + (rot ? ` rotate(${rot}deg)` : '');
-    }
-
-    const FLIGHT_EASE = 'cubic-bezier(.22, .68, .34, 1)';
-
     function rectOf(el) {
         const r = el.getBoundingClientRect();
         return { x: r.left, y: r.top, w: r.width, h: r.height };
     }
 
-    // 起飞扇形角：模拟从扇状堆叠中飞出
-    function fanAngle(i, n) {
-        const c = (n - 1) / 2;
-        return Math.max(-8, Math.min(8, (i - c) * 2.6));
-    }
+    const MP_EASE = 'cubic-bezier(.22, .68, .34, 1)';
 
-    /* ── 展开（FLIP + CSS 过渡）── */
+    /* ── 展开：容器高度平滑增长 + 各行错落淡入（下方内容自然被推开，无留白/跳变）── */
     function expand(ctx) {
         if (ctx.animating || ctx.expanded) return;
         ctx.animating = true;
         ctx.expanded = true;
 
-        const stageRect = rectOf(ctx.collapsed.querySelector('.mp-stage-host'));
-        const cont = scrollContainer();
+        const flow = ctx.flow;
+        const n = ctx.rows.length;
+        const DUR = 340, STAGGER = 40;
 
-        // 展开流参与布局，用于测量各行照片落点
-        ctx.flow.hidden = false;
-        ctx.flow.classList.add('mp-measuring');
         ctx.msgDiv.classList.add('mp-expanded');
 
+        // 展开流参与布局并测出目标高度
+        flow.hidden = false;
+        flow.style.opacity = '1';
+        flow.style.overflow = 'hidden';
+        flow.style.transition = 'none';
+        flow.style.height = 'auto';
+        const full = flow.offsetHeight;
+        flow.style.height = '0px';
+        flow.offsetHeight;                       // 强制 reflow，把 0 作为动画起点
+
+        // 各行入场初态（transform/opacity 不影响已测高度）
+        ctx.rows.forEach(r => {
+            r.shell.style.visibility = '';
+            r.row.style.transition = 'none';
+            r.row.style.opacity = '0';
+            r.row.style.transform = 'translateY(10px) scale(.97)';
+            r.av.style.opacity = '0';
+        });
+
+        // 折叠卡快速淡出并让位
+        ctx.collapsed.style.transition = 'opacity .16s ease';
+        ctx.collapsed.style.opacity = '0';
+        setTimeout(() => { ctx.collapsed.hidden = true; }, 170);
+
+        const total = DUR + (n - 1) * STAGGER;
         requestAnimationFrame(() => {
-            const targets = ctx.rows.map(r => rectOf(r.shell));
-
-            ctx.collapsed.style.transition = 'opacity .2s ease';
-            ctx.collapsed.style.opacity = '0';
-            ctx.flow.classList.remove('mp-measuring');
-            ctx.flow.style.opacity = '1';
-
-            const n = ctx.srcs.length;
-            const DUR = 380, STAGGER = 42;
-            let done = 0;
-            const finishAll = () => { if (++done >= n) ctx.animating = false; };
-
+            flow.style.transition = `height ${total}ms ${MP_EASE}`;
+            flow.style.height = full + 'px';
             ctx.rows.forEach((r, i) => {
-                r.shell.style.visibility = 'hidden';   // 飞行期间由替身表现
-                r.av.style.opacity = '0';
-                const to = targets[i];
-                const flyer = makeFlyer(ctx.srcs[i], to);
-                flyer.style.transform = mapTransform(stageRect, to, fanAngle(i, n));   // 起飞姿态＝堆叠位
-                flyer.getBoundingClientRect();                                          // 强制 reflow 锁定起点
                 const delay = i * STAGGER;
-                flyer.style.transition = `transform ${DUR}ms ${FLIGHT_EASE} ${delay}ms`;
-                flyer.style.transform = 'translate(0,0) scale(1,1) rotate(0deg)';       // 过渡到落位
-                let ended = false;
-                const finish = () => {
-                    if (ended) return; ended = true;
-                    r.shell.style.visibility = '';
-                    flyer.remove();
-                    finishAll();
-                };
-                flyer.addEventListener('transitionend', finish, { once: true });
-                setTimeout(finish, DUR + delay + 140);   // 兜底
+                r.row.style.transition = `opacity 220ms ease ${delay}ms, transform ${DUR}ms ${MP_EASE} ${delay}ms`;
+                r.row.style.opacity = '1';
+                r.row.style.transform = 'none';
                 fadeAvatar(r.av, i, false);
             });
-
-            setTimeout(() => { ctx.collapsed.hidden = true; }, 260);
-            keepVisibleAfterGrow(ctx, cont);
         });
+
+        let ended = false;
+        const onEnd = (e) => {
+            if (ended) return;
+            if (e && (e.target !== flow || e.propertyName !== 'height')) return;
+            ended = true;
+            flow.removeEventListener('transitionend', onEnd);
+            flow.style.transition = '';
+            flow.style.height = 'auto';
+            flow.style.overflow = '';
+            ctx.animating = false;
+        };
+        flow.addEventListener('transitionend', onEnd);
+        setTimeout(() => onEnd(), total + 180);
     }
 
-    /* ── 收起（FLIP 反向）── */
+    /* ── 收起：容器高度平滑收缩 + 各行反向错落退场 ── */
     function collapse(ctx) {
         if (ctx.animating || !ctx.expanded) return;
         ctx.animating = true;
         ctx.expanded = false;
 
-        // 折叠态先就位（透明），作为落点
+        const flow = ctx.flow;
+        const n = ctx.rows.length;
+        const DUR = 300, STAGGER = 34;
+
+        // 锁定当前高度作为收缩起点
+        flow.style.overflow = 'hidden';
+        flow.style.transition = 'none';
+        flow.style.height = flow.offsetHeight + 'px';
+        flow.offsetHeight;                       // reflow
+
+        // 折叠卡就位并淡入
         ctx.collapsed.hidden = false;
         ctx.collapsed.style.transition = 'none';
         ctx.collapsed.style.opacity = '0';
-        const stageRect = rectOf(ctx.collapsed.querySelector('.mp-stage-host'));
 
-        const n = ctx.srcs.length;
-        const DUR = 340, STAGGER = 38;
-        let done = 0;
-        const finishAll = () => { if (++done >= n) finishCollapse(ctx); };
-
-        ctx.rows.forEach((r, i) => fadeAvatar(r.av, i, true));
-
+        // 各行反向错落退场
         ctx.rows.forEach((r, i) => {
-            const from = rectOf(r.shell);
-            r.shell.style.visibility = 'hidden';
-            const flyer = makeFlyer(ctx.srcs[i], from);
-            flyer.style.transform = 'translate(0,0) scale(1,1) rotate(0deg)';
-            flyer.getBoundingClientRect();
             const delay = (n - 1 - i) * STAGGER;
-            flyer.style.transition = `transform ${DUR}ms ${FLIGHT_EASE} ${delay}ms, opacity ${DUR}ms ease ${delay}ms`;
-            flyer.style.transform = mapTransform(stageRect, from, fanAngle(i, n));   // 收回堆叠位
-            flyer.style.opacity = '0';                                              // 落位后隐入折叠卡后方
-            let ended = false;
-            const finish = () => {
-                if (ended) return; ended = true;
-                flyer.remove();
-                finishAll();
-            };
-            flyer.addEventListener('transitionend', finish, { once: true });
-            setTimeout(finish, DUR + delay + 140);
+            r.row.style.transition = `opacity 180ms ease ${delay}ms, transform ${DUR}ms ${MP_EASE} ${delay}ms`;
+            r.row.style.opacity = '0';
+            r.row.style.transform = 'translateY(8px) scale(.97)';
+            fadeAvatar(r.av, i, true);
         });
 
+        const total = DUR + (n - 1) * STAGGER;
         requestAnimationFrame(() => {
-            ctx.collapsed.style.transition = 'opacity .24s ease';
+            ctx.collapsed.style.transition = 'opacity .22s ease .06s';
             ctx.collapsed.style.opacity = '1';
+            flow.style.transition = `height ${total}ms ${MP_EASE}`;
+            flow.style.height = '0px';
         });
+
+        let ended = false;
+        const onEnd = (e) => {
+            if (ended) return;
+            if (e && (e.target !== flow || e.propertyName !== 'height')) return;
+            ended = true;
+            flow.removeEventListener('transitionend', onEnd);
+            finishCollapse(ctx);
+        };
+        flow.addEventListener('transitionend', onEnd);
+        setTimeout(() => onEnd(), total + 180);
     }
 
     function finishCollapse(ctx) {
         ctx.flow.hidden = true;
+        ctx.flow.style.transition = '';
+        ctx.flow.style.height = '';
+        ctx.flow.style.overflow = '';
         ctx.flow.style.opacity = '';
-        ctx.rows.forEach(r => { r.shell.style.visibility = ''; r.av.style.opacity = '0'; });
+        ctx.rows.forEach(r => {
+            r.shell.style.visibility = '';
+            r.row.style.transition = '';
+            r.row.style.transform = '';
+            r.row.style.opacity = '';
+            r.av.style.opacity = '0';
+        });
         ctx.msgDiv.classList.remove('mp-expanded');
         ctx.animating = false;
     }
