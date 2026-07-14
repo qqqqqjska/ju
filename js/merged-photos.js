@@ -10,8 +10,8 @@
     'use strict';
 
     // 折叠堆叠卡的舞台尺寸（微信固定 3:4）
-    const STACK_W = 116;
-    const STACK_H = 154;
+    const STACK_W = 140;
+    const STACK_H = 186;
 
     // 展开后每张照片的最大宽度
     const PHOTO_MAX_W = 150;
