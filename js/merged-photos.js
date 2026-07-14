@@ -127,9 +127,9 @@
             im.decoding = 'async';
             im.addEventListener('click', () => openViewer(srcs, i));
             shell.appendChild(im);
-            // 微信：他人在左（头像 照片），自己在右（照片 头像）
-            if (isUser) { row.appendChild(shell); row.appendChild(av); }
-            else { row.appendChild(av); row.appendChild(shell); }
+            // 统一 头像→照片 顺序，左右由 CSS flex-direction 控制（他人 row / 自己 row-reverse）
+            row.appendChild(av);
+            row.appendChild(shell);
             flow.appendChild(row);
             return { row, av, shell, img: im };
         });

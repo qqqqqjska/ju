@@ -25,6 +25,8 @@
     align-items: flex-start;
     gap: 6px;
 }
+/* 展开后折叠态被隐藏时彻底不占位（否则顶部残留一段堆叠卡高度的空白）*/
+.mp-collapsed[hidden] { display: none !important; }
 .mp-stage-host {
     position: relative;
 }
@@ -44,39 +46,55 @@
 }
 .mp-pill:active { background: rgba(0, 0, 0, 0.09); }
 
+/* 合并照片消息本体：无气泡（与单图消息一致） */
+.chat-message .message-content.merged-photos-msg,
+.chat-message.user .message-content.merged-photos-msg,
+.chat-message.other .message-content.merged-photos-msg {
+    background: transparent !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    max-width: 100% !important;
+    width: fit-content !important;
+}
+
 /* —— 展开态：竖直照片流 —— */
 .mp-flow {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 0;
     opacity: 0;
 }
+/* 折叠时彻底不占位（否则透明的照片列仍会撑出一大片空白）*/
+.mp-flow[hidden] { display: none !important; }
 /* 测量阶段：参与布局但不可见 */
-.mp-flow.mp-measuring {
-    opacity: 0 !important;
-}
+.mp-flow.mp-measuring { opacity: 0 !important; }
 
+/* 展开时：收起消息本体头像、内容占满整行，使每行照片与普通消息严格对齐 */
+.chat-message.mp-expanded > .chat-avatar { display: none !important; }
+.chat-message.mp-expanded .msg-wrapper { width: 100%; max-width: 100%; }
+.chat-message.mp-expanded .message-content.merged-photos-msg { width: 100% !important; }
+.chat-message.mp-expanded .mp-root { display: block; width: 100%; }
+
+/* 每一行 = 一条普通消息布局：圆形头像(30px) + 照片 */
 .mp-row {
     display: flex;
     align-items: flex-start;
-    gap: 8px;
+    margin-bottom: 10px;
 }
-/* 他人：头像在左；自己：照片在右、头像在右 */
-.chat-message.user .mp-flow .mp-row { justify-content: flex-end; }
-.chat-message.other .mp-flow .mp-row { justify-content: flex-start; }
+.chat-message.other .mp-flow .mp-row { flex-direction: row; }
+.chat-message.user .mp-flow .mp-row { flex-direction: row-reverse; }
 
+/* 头像样式与真实 .chat-avatar 完全一致 */
 .mp-row-avatar {
-    width: 38px;
-    height: 38px;
-    border-radius: 5px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    margin: 0 8px 2px;
     object-fit: cover;
     flex: 0 0 auto;
     opacity: 0;                     /* 由 JS 编排淡入 */
     background: #eee;
-}
-/* 展开时隐藏消息本体那个头像，避免与逐行头像重复 */
-.chat-message.mp-expanded > .chat-avatar {
-    visibility: hidden;
 }
 
 .mp-photo {
@@ -99,7 +117,9 @@
     align-self: flex-start;
     margin-top: 2px;
 }
-.chat-message.user .mp-flow .mp-collapse-pill { align-self: flex-end; }
+/* 收起按钮缩进到与照片对齐（让开头像的 30px + 8px 边距）*/
+.chat-message.other .mp-flow .mp-collapse-pill { margin-left: 46px; }
+.chat-message.user .mp-flow .mp-collapse-pill { align-self: flex-end; margin-right: 46px; }
 
 /* —— 飞行替身（展开/收起过程中的临时元素）—— */
 .mp-flyer {
