@@ -3433,6 +3433,7 @@ function appendMessageToUI(text, isUser, type = 'text', description = null, repl
     let swipeStartX = 0;
     let swipeStartY = 0;
     let swipeStartTime = 0;
+    let swipeOnCollapsedStack = false;
     const SWIPE_TRIGGER_DISTANCE = 34;
     const SWIPE_VERTICAL_TOLERANCE = 34;
     const SWIPE_MAX_DURATION = 800;
@@ -3477,6 +3478,9 @@ function appendMessageToUI(text, isUser, type = 'text', description = null, repl
             return;
         }
 
+        // 折叠堆叠卡：横滑用于 PhotoStack 翻页，禁用消息滑动引用/编辑（展开后的照片在 .mp-flow 内不受影响）
+        swipeOnCollapsedStack = !!(e.target && e.target.closest && e.target.closest('.mp-collapsed'));
+
         const touch = e.touches && e.touches[0];
         if (touch) {
             swipeStartX = touch.clientX;
@@ -3504,7 +3508,9 @@ function appendMessageToUI(text, isUser, type = 'text', description = null, repl
         if (Math.abs(deltaX) > LONG_PRESS_MOVE_CANCEL_DISTANCE || Math.abs(deltaY) > LONG_PRESS_MOVE_CANCEL_DISTANCE) {
             clearLongPressTimer();
         }
-        if (Math.abs(deltaY) <= SWIPE_VERTICAL_TOLERANCE * 2) {
+        if (swipeOnCollapsedStack) {
+            applyBubbleSwipeOffset(0);
+        } else if (Math.abs(deltaY) <= SWIPE_VERTICAL_TOLERANCE * 2) {
             applyBubbleSwipeOffset(deltaX * SWIPE_VISUAL_DAMPING);
         } else {
             applyBubbleSwipeOffset(0);
@@ -3535,6 +3541,11 @@ function appendMessageToUI(text, isUser, type = 'text', description = null, repl
         );
 
         if (!isHorizontalSwipe) {
+            swipeTracking = false;
+            return;
+        }
+
+        if (swipeOnCollapsedStack) {
             swipeTracking = false;
             return;
         }
