@@ -1,7 +1,8 @@
 const http = require('http');
 
 // 要转发到的官方 MCP 根地址（不带路径）。可用 Render 环境变量 TARGET_BASE 覆盖。
-const TARGET = process.env.TARGET_BASE || 'https://gwmcp.lkcoffee.com';
+// 去掉结尾多余的斜杠，避免和请求路径拼出 "//order/..." 这种双斜杠导致 404。
+const TARGET = (process.env.TARGET_BASE || 'https://gwmcp.lkcoffee.com').replace(/\/+$/, '');
 const PORT = process.env.PORT || 3000;
 
 // 可选：设置 PROXY_SECRET 后，请求必须带 header  x-proxy-secret: <值>  才放行。
